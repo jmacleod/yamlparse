@@ -25,7 +25,7 @@ int StackIsEmpty(Stack *stackP) { return stackP->top < 0; }
 void StackContents(Stack *stackP) { 
     printf("\nSTACK: (%d): ", stackP->top);
     for (int c = 0; c <= stackP->top ; c++){
-    printf("%c", *((stackP->contents)+c));
+        printf("%c", *((stackP->contents)+c));
     }
     printf("\n");
 }
@@ -76,9 +76,10 @@ state Peak(Stack *stackP) {
   return stackP->contents[stackP->top];
 }
 
-void multiLineToArray(char * string, int pretty){
+void multiLineToArray(unsigned char * unsigned_string, int pretty){
     const char newline = '\n';
     char *line;
+    char *string = unsigned_string; //not sure how to get around this in the best way
 
     if (strchr(string, newline) == NULL){
         printf("\"%s\"",string);
@@ -97,10 +98,15 @@ void multiLineToArray(char * string, int pretty){
 }
 
 int main(void) {
-  FILE *fh = fopen("test.yaml", "r");
+  FILE *fh = fopen("test.yaml", "r");  //TODO - make this an input variable
+  int maxStackSize = 100000; //TODO - make this an input variable
+  const char newline = '\n';
+  char *string;
+
   yaml_parser_t parser;
-  yaml_event_t  event;   /* New variable */
-  int maxStackSize = 100000;
+  yaml_event_t  event;
+
+  /* Initialize stack state so we can keep track of context in yaml */
   Stack stateStack; 
   StackInit(&stateStack, maxStackSize);
 
@@ -113,15 +119,15 @@ int main(void) {
   /* Set input file */
   yaml_parser_set_input_file(&parser, fh);
 
-  /* START new code */
+  /* START parse loop */
   do {
     if (!yaml_parser_parse(&parser, &event)) {
        printf("Parser error %d\n", parser.error);
        exit(EXIT_FAILURE);
     }
     //StackContents(&stateStack);
-    switch(event.type)
-    { 
+    switch(event.type) { 
+
     case YAML_NO_EVENT: puts("No event!"); break;
     /* Stream start/end */
     case YAML_STREAM_START_EVENT: 
@@ -157,6 +163,9 @@ int main(void) {
         if (Peak(&stateStack) == 'V'){
 	    printf("{");
 	}
+        if (Peak(&stateStack) == 'A'){
+	    printf(", {");
+	}
         Push(&stateStack, 'M');
         Push(&stateStack, 'Z');
     break;
@@ -169,6 +178,9 @@ int main(void) {
 	if (Pop(&stateStack) != 'M'){
             fprintf(stderr, "Expected to be ending a mapping\n");
             exit(1);
+	}
+        if (Peak(&stateStack) == 'A'){
+	    printf("}");
 	}
     break;
     /* Data */
@@ -184,32 +196,39 @@ int main(void) {
 		Pop(&stateStack);
 	    break;
 	    case 'A':
-                printf(",\"%s\"", event.data.scalar.value); 
+	        printf(",");
+		multiLineToArray(event.data.scalar.value, 0);
+                //printf(",\"%s\"", event.data.scalar.value); 
 	    break;
 	    case 'Z':
                 printf("\"%s\" : ", event.data.scalar.value); 
 		Pop(&stateStack);
                 Push(&stateStack, 'V');
 	    break;
-	    case 'K':
-                printf(",\"%s\" : ", event.data.scalar.value); 
-		Pop(&stateStack);
-                Push(&stateStack, 'V');
-	    break;
+	    //case 'K':
+            //    printf(",\"%s\" : ", event.data.scalar.value); 
+            //    Pop(&stateStack);
+            //    Push(&stateStack, 'V');
+	    //break;
 	    case 'V':
 		multiLineToArray(event.data.scalar.value, 0);
                 //printf("\"%s\"", event.data.scalar.value); 
 		Pop(&stateStack);
-                //Push(&stateStack, 'K');
+                //Push(&stateStack, 'K'); //TODO get rid of this and the K case
 	    break;
 	    case 'M':
+                string = event.data.scalar.value; //not sure how to get around this in the best way
+                if (strchr(string, newline) != NULL){ //This string has newlines!!!!
+                    fprintf(stderr, "key value has newlines, can;t really make that into json.\n");
+		    exit(1);
+		}
                 printf(", \"%s\" : ", event.data.scalar.value); 
                 Push(&stateStack, 'V');
 	    break;
 	    default:
                 printf("How the hell, we are in the default? Stack State = (%c)\n", Peak(&stateStack)); 
+		exit(1);
 	    break;
-
         }
 	break;
     }
@@ -217,12 +236,11 @@ int main(void) {
       yaml_event_delete(&event);
   } while(event.type != YAML_STREAM_END_EVENT);
   yaml_event_delete(&event);
-  /* END new code */
 
   /* Cleanup */
   yaml_parser_delete(&parser);
   fclose(fh);
 
-printf("\n");
+  printf("\n");
   return 0;
 }
